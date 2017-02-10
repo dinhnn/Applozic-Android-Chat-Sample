@@ -42,6 +42,7 @@ import com.applozic.audiovideo.activity.AudioCallActivityV2;
 import com.applozic.audiovideo.activity.VideoActivity;
 import com.applozic.mobicomkit.Applozic;
 import com.applozic.mobicomkit.ApplozicClient;
+import com.applozic.mobicomkit.api.HttpRequestUtils;
 import com.applozic.mobicomkit.api.account.register.RegistrationResponse;
 import com.applozic.mobicomkit.api.account.user.MobiComUserPreference;
 import com.applozic.mobicomkit.api.account.user.PushNotificationTask;
@@ -55,10 +56,13 @@ import com.applozic.mobicommons.commons.core.utils.PermissionsUtils;
 import com.applozic.mobicommons.commons.core.utils.Utils;
 import com.applozic.mobicommons.people.contact.Contact;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RunnableFuture;
 
 /**
  * A login screen that offers login via email/password.
@@ -261,7 +265,7 @@ public class LoginActivity extends Activity implements ActivityCompat.OnRequestP
 
             // callback for login process
             final Activity activity = LoginActivity.this;
-            UserLoginTask.TaskListener listener = new UserLoginTask.TaskListener() {
+            final UserLoginTask.TaskListener listener = new UserLoginTask.TaskListener() {
 
                 @Override
                 public void onSuccess(RegistrationResponse registrationResponse, final Context context) {
@@ -335,22 +339,46 @@ public class LoginActivity extends Activity implements ActivityCompat.OnRequestP
                 }
             };
 
-            User user = new User();
+            final User user = new User();
             user.setUserId(userId);
             user.setEmail(email);
             user.setPassword(password);
             user.setDisplayName(displayName);
             user.setContactNumber(phoneNumber);
             user.setAuthenticationTypeId(authenticationType.getValue());
-            user.setFeatures(getFeatureList());
+            final Runnable tokenListener = new Runnable() {
+                @Override
+                public void run() {
+                    LoginActivity.this.runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mAuthTask = new UserLoginTask(user, listener, LoginActivity.this);
+                            mEmailSignInButton.setVisibility(View.INVISIBLE);
+                            mSpinnerView.setVisibility(View.INVISIBLE);
+                            mAuthTask.execute((Void) null);
+                        }
+                    });
+                }
+            };
+            new Thread(){
+                @Override
+                public void run() {
+                    try {
+                        HttpRequestUtils httpRequestUtils = new HttpRequestUtils(LoginActivity.this);
+                        MobiComUserPreference pref = MobiComUserPreference.getInstance(LoginActivity.this);
+                        pref.setUrl("http://192.168.2.3:8080");
+                        pref.setAuthenticationType("1");
+                        String token = httpRequestUtils.postData(pref.getUrl() + "/rest/ws/token", "application/json", "text/plain", new JSONObject().put("userId", user.getUserId()).put("password", user.getPassword()).toString());
+                        pref.setPassword(token);
+                        tokenListener.run();
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
+                }
+            }.start();
 
-            mAuthTask = new UserLoginTask(user, listener, this);
-            mEmailSignInButton.setVisibility(View.INVISIBLE);
-            mSpinnerView.setVisibility(View.INVISIBLE);
-            mAuthTask.execute((Void) null);
         }
     }
-
     private List<String> getFeatureList() {
 
         List<String> featureList =  new ArrayList<>();
